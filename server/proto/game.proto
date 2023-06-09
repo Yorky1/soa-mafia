@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package game;
+
+option go_package = "./game";
+
+service Game {
+    rpc Register(RegisterRequest) returns (RegisterResponse) {}
+    rpc WaitForGame(GameSession) returns (stream Empty) {}
+    rpc VotePlayer(PlayerVote) returns (Empty) {}
+    rpc StageResult(GameSession) returns (VotingResult) {}
+    rpc CurGameInfo(GameSession) returns (GameInfo) {}
+}
+
+message GameInfo {
+    repeated Player players = 1;
+    int32 day = 2;
+}
+
+message VotingResult {
+    string message = 1;
+    repeated Player players = 2;
+    bool gameOver = 3;
+}
+
+message PlayerVote {
+    string playerId = 1;
+    string sessionId = 2;
+}
+
+message GameSession {
+    string id = 1;
+}
+
+message Player {
+    string name = 1;
+    string id = 2;
+    string role = 3;
+}
+
+message RegisterRequest {
+    string playerName = 1;
+}
+
+message RegisterResponse {
+    string gameSessionId = 1;
+    Player currentPlayer = 2;
+}
+
+message StartGame {
+    bool gameStarted = 1;
+}
+
+message Empty {
+}
