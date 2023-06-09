@@ -41,7 +41,7 @@ type GameSession struct {
 	stageInfo string
 }
 
-func NewGameSession() *GameSession {
+func NewGameSession(maxPlayers int) *GameSession {
 	gs := &GameSession{
 		id:        uuid.New().String(),
 		players:   make([]*Player, 0),
@@ -53,7 +53,7 @@ func NewGameSession() *GameSession {
 	}
 	gs.snapshots = append(gs.snapshots, NewGameSessionSnapshot())
 	gs.snapshots = append(gs.snapshots, NewGameSessionSnapshot())
-	gs.snapshots[0].wg.Add(len(gs.players))
+	gs.snapshots[0].wg.Add(maxPlayers)
 	return gs
 }
 

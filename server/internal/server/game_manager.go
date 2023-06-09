@@ -14,7 +14,8 @@ type GameManager struct {
 
 func NewGameManager(maxPlayers int) *GameManager {
 	return &GameManager{
-		sessions: make([]*gs.GameSession, 0),
+		sessions:   make([]*gs.GameSession, 0),
+		maxPlayers: maxPlayers,
 	}
 }
 
@@ -24,7 +25,7 @@ func (gm *GameManager) findSessionToConnect() *gs.GameSession {
 			return s
 		}
 	}
-	gm.sessions = append(gm.sessions, gs.NewGameSession())
+	gm.sessions = append(gm.sessions, gs.NewGameSession(gm.maxPlayers))
 	return gm.sessions[len(gm.sessions)-1]
 }
 

@@ -26,8 +26,16 @@ func getMaxPlayers() int {
 	return res
 }
 
+func getServerPort() string {
+	port, has := os.LookupEnv("SERVER_PORT")
+	if !has {
+		return "9001"
+	}
+	return port
+}
+
 func main() {
-	lis, err := net.Listen("tcp", ":9001")
+	lis, err := net.Listen("tcp", ":"+getServerPort())
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}

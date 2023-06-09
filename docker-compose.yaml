@@ -1,0 +1,39 @@
+version: '3.8'
+
+x-bot-client-env:
+  &bot-client-env
+  SERVER_ADDR: mafia_server
+  SERVER_PORT: 9001
+  BOT: 1
+
+services:
+  server:
+    image: yorky0/mafia_server:latest
+    hostname: "mafia_server"
+    ports:
+      - 9001:9001/tcp
+    environment:
+      SERVER_PORT: 9001
+      MAX_PLAYERS: 4
+    restart: on-failure
+
+  bot1:
+    image: yorky0/mafia_client:latest
+    environment: *bot-client-env
+    depends_on:
+      - server
+    restart: on-failure
+
+  bot2:
+    image: yorky0/mafia_client:latest
+    environment: *bot-client-env
+    depends_on:
+      - server
+    restart: on-failure
+
+  bot3:
+    image: yorky0/mafia_client:latest
+    environment: *bot-client-env
+    depends_on:
+      - server
+    restart: on-failure
