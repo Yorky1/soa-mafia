@@ -4,6 +4,8 @@ x-bot-client-env:
   &bot-client-env
   SERVER_ADDR: mafia_server
   SERVER_PORT: 9001
+  CHAT_ADDR: chat_server
+  CHAT_PORT: 9002
   BOT: 1
 
 services:
@@ -17,11 +19,30 @@ services:
       MAX_PLAYERS: 4
     restart: on-failure
 
+  rabbitmq:
+    image: "rabbitmq:3.11.6-management-alpine"
+    hostname: "rabbitmq"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: on-failure
+
+  chat_server:
+    image: yorky0/chat_server:latest
+    hostname: "chat_server"
+    ports:
+      - 9002:9002/tcp
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - rabbitmq
+    restart: on-failure
   bot1:
     image: yorky0/mafia_client:latest
     environment: *bot-client-env
     depends_on:
       - server
+      - chat_server
     restart: on-failure
 
   bot2:
@@ -29,6 +50,7 @@ services:
     environment: *bot-client-env
     depends_on:
       - server
+      - chat_server
     restart: on-failure
 
   bot3:
@@ -36,4 +58,5 @@ services:
     environment: *bot-client-env
     depends_on:
       - server
+      - chat_server
     restart: on-failure

@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package chat;
+
+option go_package = "./chat";
+
+service Chat {
+    rpc RegisterNewRoom(RegisterRoomRequest) returns (Empty) {}
+    rpc EnterRoom(EnterRoomRequest) returns (Empty) {}
+    rpc Stream(stream UserChatAction) returns (stream ServerChatAction) {}
+}
+
+message User {
+    string id = 1;
+    string name = 2;
+}
+
+message RegisterRoomRequest {
+    string roomId = 1;
+}
+
+message EnterRoomRequest {
+    string roomId = 1;
+    User user = 2;
+}
+
+message UserMessage {
+    string message = 1;
+    User user = 2;
+}
+
+message ServerChatAction {
+    oneof action {
+        UserMessage message = 1;
+        Empty stop = 2;
+    }
+}
+
+enum UserActionType {
+    Connect = 0;
+    Message = 2;
+}
+
+message ConnectionInfo {
+    string userId = 1;
+    string roomId = 2;
+}
+
+message UserChatAction {
+    oneof action {
+        ConnectionInfo connect = 1;
+        UserMessage message = 3;
+    }
+    UserActionType type = 4;
+}
+
+message Empty {
+}

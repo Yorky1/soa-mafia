@@ -4,28 +4,31 @@ import (
 	"context"
 	"fmt"
 	"log"
+	chatpb "soa_mafia/chat/proto"
 	pb "soa_mafia/server/proto"
 
+	"github.com/pterm/pterm"
 	"google.golang.org/grpc"
 )
 
 type Client struct {
-	player    *pb.Player
-	sessionId string
-	pb        pb.GameClient
-	voter     Voter
+	player      *pb.Player
+	sessionId   string
+	pb          pb.GameClient
+	chat        chatpb.ChatClient
+	voter       Voter
+	chatBuffers map[string][]*chatpb.UserMessage
 }
 
-func NewRealClient(conn *grpc.ClientConn) *Client {
-	return &Client{pb: pb.NewGameClient(conn), voter: NewRealVoter()}
+func NewRealClient(conn *grpc.ClientConn, chat_conn *grpc.ClientConn) *Client {
+	return &Client{pb: pb.NewGameClient(conn), chat: chatpb.NewChatClient(chat_conn), voter: NewRealVoter(), chatBuffers: make(map[string][]*chatpb.UserMessage)}
 }
 
-func NewBotClient(conn *grpc.ClientConn) *Client {
-	return &Client{pb: pb.NewGameClient(conn), voter: NewBotVoter()}
+func NewBotClient(conn *grpc.ClientConn, chat_conn *grpc.ClientConn) *Client {
+	return &Client{pb: pb.NewGameClient(conn), chat: chatpb.NewChatClient(chat_conn), voter: NewBotVoter(), chatBuffers: make(map[string][]*chatpb.UserMessage)}
 }
 
 func (client *Client) register() {
-	fmt.Println(HELLO_MESSAGE)
 	clientName := client.voter.GetName()
 
 	request := &pb.RegisterRequest{PlayerName: clientName}
@@ -60,14 +63,14 @@ func (client *Client) waitForNextState() {
 }
 
 func (client *Client) waitForGameStart() {
-	fmt.Println("Cool! Now we are waiting for the other players to connect...")
+	pterm.Println("Now we are waiting for the other players to connect...")
 	client.waitForNextState()
 
-	fmt.Println("Ok, all players are connected. Let's start!")
-	fmt.Println("Connected players are:")
+	pterm.Println("Ok, all players are connected. Let's start!")
+	pterm.Println("Connected players are:")
 	players := client.gameInfo().Players
 	for _, player := range players {
-		fmt.Println(player.Name)
+		pterm.Println(player.Name)
 	}
 	client.updateRole(players)
 }
@@ -100,22 +103,41 @@ func (client *Client) updateRole(players []*pb.Player) {
 	}
 }
 
+func (client *Client) votingCycle(chatName string, startMsg string, voteFunc func()) {
+	for {
+		choise := client.voter.GetVoteMenuChoise()
+		switch choise {
+		case GoToChat:
+			client.chatEngine(chatName, startMsg)
+		case Vote:
+			voteFunc()
+			return
+		}
+	}
+}
+
 func (client *Client) waitForDayVote() bool {
 	gameInfo := client.gameInfo()
-	fmt.Printf("Current day is %d\n", gameInfo.Day)
-	fmt.Printf("Your role is %s\n", client.player.Role)
+	pterm.Printf("Current day is %d\n", gameInfo.Day)
+	pterm.Printf("Your role is %s\n", client.player.Role)
 	if client.player.Role != "ghost" {
-		vote := client.voter.DayVote(getPlayersNamesWithIdToVote(gameInfo.Players))
+		client.votingCycle(
+			client.sessionId+"-day",
+			"Welcome to day chat. Here you can chat with all players with non-ghost role.",
+			func() {
+				vote := client.voter.DayVote(getPlayersNamesWithIdToVote(gameInfo.Players))
 
-		if _, err := client.pb.VotePlayer(context.TODO(), &pb.PlayerVote{
-			PlayerId:  findPlayer(gameInfo.Players, vote).Id,
-			SessionId: client.sessionId,
-		}); err != nil {
-			log.Fatalf("client.VotePlayer failed: %v", err)
-			panic(err)
-		}
+				if _, err := client.pb.VotePlayer(context.TODO(), &pb.PlayerVote{
+					PlayerId:  findPlayer(gameInfo.Players, vote).Id,
+					SessionId: client.sessionId,
+				}); err != nil {
+					log.Fatalf("client.VotePlayer failed: %v", err)
+					panic(err)
+				}
+			},
+		)
 	} else {
-		fmt.Println("Sorry, but you dead, so can't vote :(")
+		pterm.Println("Sorry, but you dead, so can't vote or chat with people :(")
 	}
 
 	client.waitForNextState()
@@ -125,7 +147,7 @@ func (client *Client) waitForDayVote() bool {
 		log.Fatalf("client.StageResult failed: %v", err)
 		panic(err)
 	}
-	fmt.Println(result.Message)
+	pterm.Println(result.Message)
 	return result.GameOver
 }
 
@@ -143,22 +165,28 @@ func (client *Client) waitForSheriff() bool {
 		}
 	}
 	client.waitForNextState()
-	fmt.Println("Sheriff made his choise. Mafia wakes up!")
+	pterm.Println("Sheriff made his choise. Mafia wakes up!")
 	return false
 }
 
 func (client *Client) waitForMafia() bool {
 	if client.player.Role == "mafia" {
-		gameInfo := client.gameInfo()
-		vote := client.voter.MafiaVote(getPlayersNamesWithIdToVote(gameInfo.Players))
+		client.votingCycle(
+			client.sessionId+"-mafia",
+			"Welcome to mafia chat! Here you can chat with other players with role mafia.",
+			func() {
+				gameInfo := client.gameInfo()
+				vote := client.voter.MafiaVote(getPlayersNamesWithIdToVote(gameInfo.Players))
 
-		if _, err := client.pb.VotePlayer(context.TODO(), &pb.PlayerVote{
-			PlayerId:  findPlayer(gameInfo.Players, vote).Id,
-			SessionId: client.sessionId,
-		}); err != nil {
-			log.Fatalf("client.VotePlayer failed: %v", err)
-			panic(err)
-		}
+				if _, err := client.pb.VotePlayer(context.TODO(), &pb.PlayerVote{
+					PlayerId:  findPlayer(gameInfo.Players, vote).Id,
+					SessionId: client.sessionId,
+				}); err != nil {
+					log.Fatalf("client.VotePlayer failed: %v", err)
+					panic(err)
+				}
+			},
+		)
 	}
 	client.waitForNextState()
 	result, err := client.pb.StageResult(context.TODO(), &pb.GameSession{Id: client.sessionId})
@@ -166,12 +194,103 @@ func (client *Client) waitForMafia() bool {
 		log.Fatalf("client.StageResult failed: %v", err)
 		panic(err)
 	}
-	fmt.Println(result.Message)
+	pterm.Println(result.Message)
 	client.updateRole(result.Players)
 	return result.GameOver
 }
 
-func (client *Client) StartGameClient() {
+func (client *Client) getChatBuffer(chatName string) []*chatpb.UserMessage {
+	if _, has := client.chatBuffers[chatName]; !has {
+		client.chatBuffers[chatName] = make([]*chatpb.UserMessage, 0)
+	}
+	return client.chatBuffers[chatName]
+}
+
+func formatChatMessage(name string, msg string) string {
+	return fmt.Sprintf("%s: %s", name, msg)
+}
+
+func (client *Client) getChatFrame(chatBuffer []*chatpb.UserMessage) string {
+	res := ""
+	for i := len(chatBuffer) - 5; i < len(chatBuffer); i++ {
+		if i >= 0 {
+			res += pterm.Sprintln("%s: %s", chatBuffer[i].User, chatBuffer[i].Message)
+		}
+	}
+	return res
+}
+
+func (client *Client) chatEngine(chatName string, startMsg string) {
+	pterm.Println(startMsg)
+	pterm.Println(`Type /exit to leave chat room`)
+
+	client.chat.RegisterNewRoom(context.TODO(), &chatpb.RegisterRoomRequest{
+		RoomId: chatName,
+	})
+
+	client.chat.EnterRoom(context.TODO(), &chatpb.EnterRoomRequest{
+		RoomId: chatName,
+		User: &chatpb.User{
+			Id:   client.player.Id,
+			Name: client.player.Name,
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := client.chat.Stream(ctx)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	stream.Send(&chatpb.UserChatAction{
+		Action: &chatpb.UserChatAction_Connect{
+			Connect: &chatpb.ConnectionInfo{
+				UserId: client.player.Id,
+				RoomId: chatName,
+			},
+		},
+		Type: chatpb.UserActionType_Connect,
+	})
+
+	chatBuffer := client.getChatBuffer(chatName)
+	pterm.Println(client.getChatFrame(chatBuffer))
+
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			userMessage := msg.GetMessage()
+			chatBuffer = append(chatBuffer, userMessage)
+			pterm.Println(formatChatMessage(msg.GetMessage().User.Name, msg.GetMessage().Message))
+		}
+	}()
+
+	for {
+		msg := client.voter.GetMessage()
+		if msg == "/exit" {
+			break
+		}
+		stream.Send(&chatpb.UserChatAction{
+			Action: &chatpb.UserChatAction_Message{
+				Message: &chatpb.UserMessage{
+					Message: msg,
+					User: &chatpb.User{
+						Id:   client.player.Id,
+						Name: client.player.Name,
+					},
+				},
+			},
+			Type: chatpb.UserActionType_Message,
+		})
+	}
+	stream.CloseSend()
+}
+
+func (client *Client) mainGameCycle() {
 	client.register()
 	client.waitForGameStart()
 
@@ -188,4 +307,33 @@ func (client *Client) StartGameClient() {
 	}
 }
 
+func (client *Client) showMainMenu() {
+	shutDown := false
+	for !shutDown {
+		switch client.voter.GetMainMenuChoise() {
+		case FindGameSession:
+			client.mainGameCycle()
+		case Exit:
+			shutDown = true
+			break
+		}
+	}
+}
+
+func (client *Client) StartGameClient() {
+	pterm.Print(GAME_LOGO)
+	pterm.Println(HELLO_MESSAGE)
+
+	client.showMainMenu()
+}
+
 const HELLO_MESSAGE = `Greetings! You are playing a SOA-Mafia game.`
+
+const GAME_LOGO = `
+███████╗ ██████╗  █████╗       ███╗   ███╗ █████╗ ███████╗██╗ █████╗ 
+██╔════╝██╔═══██╗██╔══██╗      ████╗ ████║██╔══██╗██╔════╝██║██╔══██╗
+███████╗██║   ██║███████║█████╗██╔████╔██║███████║█████╗  ██║███████║
+╚════██║██║   ██║██╔══██║╚════╝██║╚██╔╝██║██╔══██║██╔══╝  ██║██╔══██║
+███████║╚██████╔╝██║  ██║      ██║ ╚═╝ ██║██║  ██║██║     ██║██║  ██║
+╚══════╝ ╚═════╝ ╚═╝  ╚═╝      ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝                                                                     
+`

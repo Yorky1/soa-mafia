@@ -1,11 +1,28 @@
 package client
 
 import (
+	"bufio"
+	"log"
 	"math/rand"
+	"os"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/goombaio/namegenerator"
+	"github.com/pterm/pterm"
+)
+
+type MainMenuChoise int32
+
+const (
+	FindGameSession MainMenuChoise = iota
+	Exit
+)
+
+type VoteMenuChoise int32
+
+const (
+	GoToChat VoteMenuChoise = iota
+	Vote
 )
 
 type Voter interface {
@@ -13,6 +30,9 @@ type Voter interface {
 	DayVote(names []string) string
 	MafiaVote(names []string) string
 	SheriffVote(names []string) string
+	GetMainMenuChoise() MainMenuChoise
+	GetVoteMenuChoise() VoteMenuChoise
+	GetMessage() string
 }
 
 type RealVoter struct {
@@ -23,49 +43,58 @@ func NewRealVoter() *RealVoter {
 }
 
 func (v *RealVoter) GetName() string {
-	answer := struct {
-		Name string
-	}{}
-	qs := []*survey.Question{
-		{
-			Name:      "name",
-			Prompt:    &survey.Input{Message: "To connect to the game session please enter your name:"},
-			Validate:  survey.Required,
-			Transform: survey.Title,
-		},
+	res, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).WithDefaultText("To connect to the game session please enter your name").Show()
+	if err != nil {
+		log.Panic(err)
 	}
-	survey.Ask(qs, &answer)
-	return answer.Name
+	pterm.Println()
+	return res
 }
 
 func (v *RealVoter) DayVote(names []string) string {
-	vote := ""
-	prompt := &survey.Select{
-		Message: "Vote for a player:",
-		Options: names,
-	}
-	survey.AskOne(prompt, &vote)
+	printer := pterm.DefaultInteractiveSelect.WithOptions(names).WithDefaultText("Vote for a player")
+	vote, _ := printer.Show()
 	return vote
 }
 
 func (v *RealVoter) SheriffVote(names []string) string {
-	vote := ""
-	prompt := &survey.Select{
-		Message: "Vote for a player to check:",
-		Options: names,
-	}
-	survey.AskOne(prompt, &vote)
+	printer := pterm.DefaultInteractiveSelect.WithOptions(names).WithDefaultText("Vote for a player to check:")
+	vote, _ := printer.Show()
 	return vote
 }
 
 func (v *RealVoter) MafiaVote(names []string) string {
-	vote := ""
-	prompt := &survey.Select{
-		Message: "Vote for a player to kill:",
-		Options: names,
-	}
-	survey.AskOne(prompt, &vote)
+	printer := pterm.DefaultInteractiveSelect.WithOptions(names).WithDefaultText("Vote for a player to kill:")
+	vote, _ := printer.Show()
 	return vote
+}
+
+func (v *RealVoter) GetMainMenuChoise() MainMenuChoise {
+	printer := pterm.DefaultInteractiveSelect.WithOptions([]string{"find game session", "exit"})
+	selectedOption, _ := printer.Show()
+
+	if selectedOption == "exit" {
+		return Exit
+	} else {
+		return FindGameSession
+	}
+}
+
+func (v *RealVoter) GetVoteMenuChoise() VoteMenuChoise {
+	printer := pterm.DefaultInteractiveSelect.WithOptions([]string{"vote for a player", "go to chat"})
+	selectedOption, _ := printer.Show()
+
+	if selectedOption == "vote for a player" {
+		return Vote
+	} else {
+		return GoToChat
+	}
+}
+
+func (v *RealVoter) GetMessage() string {
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	return text[:len(text)-1]
 }
 
 type BotVoter struct {
@@ -93,4 +122,16 @@ func (v *BotVoter) SheriffVote(names []string) string {
 
 func (v *BotVoter) MafiaVote(names []string) string {
 	return names[rand.Int31n(int32(len(names)))]
+}
+
+func (v *BotVoter) GetMainMenuChoise() MainMenuChoise {
+	return FindGameSession
+}
+
+func (v *BotVoter) GetMessage() string {
+	return "/exit"
+}
+
+func (v *BotVoter) GetVoteMenuChoise() VoteMenuChoise {
+	return Vote
 }

@@ -6,7 +6,7 @@
 soa-mafia$ docker compose up
 ```
 
-Запуск клиета:
+Запуск клиента:
 
 ```bash
 soa-mafia$ go run client/cmd/main.go

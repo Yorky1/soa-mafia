@@ -124,7 +124,7 @@ func (gs *GameSession) initGame() {
 }
 
 func (gs *GameSession) GameOver() bool {
-	return gs.roleCount(Mafia) >= gs.roleCount(Citizen)+gs.roleCount(Sheriff) || gs.roleCount(Mafia) == 0
+	return gs.roleCount(Mafia) == gs.roleCount(Citizen) || gs.roleCount(Mafia) == 0
 }
 
 func (gs *GameSession) GameOverMessage() string {
